@@ -1,0 +1,94 @@
+---
+title: "Practical Machine Learning Project"
+author: "Aakash Gupta"
+date: "11/09/2020"
+output: html_document
+---
+Github link: https://github.com/Sky00811/PracticalML
+
+** Executive Summary**
+This analysis was done to predict the manner in which the subjects performed weight lifting exercises. The data is collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. The outcome variable has five classes and the total number of predictors are 159.
+
+**Data Preparation**
+```{r}
+URL1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+URL2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+filename1 <- "pml-training.csv"
+filename2 <- "pml-testing.csv"
+download.file(url=URL1, destfile=filename1,method="curl")
+download.file(url=URL2, destfile=filename2,method="curl")
+training <- read.csv("pml-training.csv",row.names=1,na.strings = "")
+testing <- read.csv("pml-testing.csv",row.names=1,na.strings = "NA")
+```
+
+**Data Preprocessing**
+
+Loading the required libraries and removing the columns with missing values and useless columns like names
+```{r}
+library(caret)
+library(rpart)
+library(knitr)
+library(randomForest)
+library(ggplot2)
+library(ElemStatLearn)
+library(corrplot)
+nsv <- nearZeroVar(training,saveMetrics=TRUE)
+training <- training[,!nsv$nzv]
+testing <- testing[,!nsv$nzv]
+
+training_filter_na <- training[,(colSums(is.na(training)) == 0)]
+testing_filter_na <- testing[,(colSums(is.na(testing)) == 0)]
+
+colRm_train <- c("user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","num_window")
+colRm_test <- c("user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","num_window","problem_id")
+training_colRm <- training_filter_na[,!(names(training_filter_na) %in% colRm_train)]
+testing_colRm <- testing_filter_na[,!(names(testing_filter_na) %in% colRm_test)]
+dim(training_colRm)
+dim(testing_colRm)
+```
+
+Now we split the preprocessed training data into training set and validation set.
+```{r}
+inTrain <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+training_clean <- training_colRm[inTrain,]
+validation_clean <- training_colRm[-inTrain,]
+```
+
+In random forests, there is no need for cross-validation or a separate test set to get an unbiased estimate of the test set error. It is estimated internally, during the execution. Therefore, the training of the model (Random Forest) is proceeded using the training data set.
+
+**Random Forest Model**
+```{r}
+set.seed(1234)
+rfFit <- train(classe ~ ., method = "rf", data = training_clean)
+validation_pred <- predict(rfFit, newdata=validation_clean)
+
+```
+
+Checking Important Variable
+```{r}
+imp <- varImp(rfFit)$importance
+varImpPlot(rfFit$finalModel, sort = TRUE, main = "Importance of the Predictors")
+
+```
+
+The random forest algorithm generates a model with accuracy 0.9913. The out-of-sample error is 0.9%, which is pretty low. We don’t need to go back and include more variables with imputations. The top 4 most important variables according to the model fit are ‘roll_belt’, ‘yaw_belt’, ‘pitch_forearm’ and ‘pitch_belt’.
+
+**Prediction with the Testing Dataset**
+
+The last step is to use the random forest model to predict on the testing set without the outcome variable and save the prediction output.
+```{r}
+testing_pred <- predict(rfFit, newdata=testing_colRm)
+testing_pred
+
+write_files <- function(x) {
+        n <- length(x)
+        for (i in 1:n) {
+                filename <- paste0("problem_id", i, ".txt")
+                write.table(x[i], file=filename, quote=FALSE, row.names=FALSE,col.names=FALSE)
+        }
+}
+write_files(testing_pred)
+```
+
+**Results**
+We used 52 variables to build the random forest model with 4-fold cross validation. The out-of-sample error is approximately 0.9%.
